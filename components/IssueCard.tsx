@@ -14,6 +14,7 @@ interface IssueCardProps {
   onDelete?: (id: string) => void;
   viewMode: ViewMode;
   index: number;
+  userDepartment?: string; // For department-specific resolution check
 }
 
 export const IssueCard: React.FC<IssueCardProps> = ({ 
@@ -26,8 +27,13 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   onReject,
   onDelete,
   viewMode, 
-  index 
+  index,
+  userDepartment
 }) => {
+  // Check if professor can resolve/reject this issue (only if department matches)
+  const canResolveReject = viewMode === 'professor' 
+    ? (userDepartment && userDepartment === issue.department)
+    : false;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -77,25 +83,32 @@ export const IssueCard: React.FC<IssueCardProps> = ({
               </span>
             </>
           ) : (
-            // Professor View: Resolve / Reject
+            // Professor View: Resolve / Reject (only if department matches)
             <>
               {issue.status === 'open' ? (
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => onResolve && onResolve(issue.id)}
-                    className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all active:scale-95 border border-emerald-500/20"
-                    title="Mark as Resolved"
-                  >
-                    <CheckCircle2 size={20} />
-                  </button>
-                  <button
-                    onClick={() => onReject && onReject(issue.id)}
-                    className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all active:scale-95 border border-rose-500/20"
-                    title="Reject Issue"
-                  >
-                    <XCircle size={20} />
-                  </button>
-                </div>
+                canResolveReject ? (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => onResolve && onResolve(issue.id)}
+                      className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all active:scale-95 border border-emerald-500/20"
+                      title="Mark as Resolved"
+                    >
+                      <CheckCircle2 size={20} />
+                    </button>
+                    <button
+                      onClick={() => onReject && onReject(issue.id)}
+                      className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all active:scale-95 border border-rose-500/20"
+                      title="Reject Issue"
+                    >
+                      <XCircle size={20} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs text-center px-2">
+                    <Ban size={20} className="text-slate-600 mb-1" />
+                    <span className="text-[10px] leading-tight">Not your department</span>
+                  </div>
+                )
               ) : (
                  <div className="flex flex-col items-center justify-center h-full text-slate-500">
                     {issue.status === 'resolved' ? (

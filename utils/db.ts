@@ -129,8 +129,13 @@ import {
           issues.push({ id: doc.id, ...doc.data() } as Issue);
         });
         
-        // Sort client-side (Newest first)
-        return issues.sort((a, b) => b.timestamp - a.timestamp);
+        // Sort by upvotes (highest first), then by timestamp (newest first) for tie-breaking
+        return issues.sort((a, b) => {
+          if (b.upvotes !== a.upvotes) {
+            return b.upvotes - a.upvotes; // Higher upvotes first
+          }
+          return b.timestamp - a.timestamp; // Newer first if upvotes are equal
+        });
 
       } catch (error) {
         console.error("Get Issues Error:", error);

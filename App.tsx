@@ -287,10 +287,16 @@ export default function App() {
     try {
       // Build query object
       const filter: any = {};
-      if (activeTab === 'professor' && user.role === 'professor') {
-        if (user.department) filter.department = user.department;
+      
+      // Professors should only see their department's issues in all tabs (feed, log, professor dashboard)
+      if (user.role === 'professor' && user.department) {
+        if (activeTab === 'professor' || activeTab === 'log' || activeTab === 'feed') {
+          filter.department = user.department;
+        }
       }
-      if (activeTab === 'track') {
+      
+      // Students can filter by their own issues in track tab
+      if (activeTab === 'track' && user.role === 'student') {
           filter.createdBy = user.id;
       }
 
@@ -327,14 +333,32 @@ export default function App() {
     if (user?.role !== 'student') return;
     if (userUpvotes.has(id)) return; 
 
-    // Optimistic Update
+    // Optimistic Update with dynamic sorting
     setUserUpvotes(prev => new Set(prev).add(id));
-    setIssues(prev => prev.map(i => i.id === id ? { ...i, upvotes: i.upvotes + 1 } : i));
+    setIssues(prev => {
+      const updated = prev.map(i => i.id === id ? { ...i, upvotes: i.upvotes + 1 } : i);
+      // Re-sort by upvotes (highest first), then timestamp (newest first)
+      return updated.sort((a, b) => {
+        if (b.upvotes !== a.upvotes) {
+          return b.upvotes - a.upvotes;
+        }
+        return b.timestamp - a.timestamp;
+      });
+    });
 
     try {
       await db.upvoteIssue(id);
+      // Refetch to ensure consistency with server
+      await fetchIssues();
     } catch (e) {
       console.error("Failed to upvote", e);
+      // Revert optimistic update on error
+      setUserUpvotes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      await fetchIssues();
     }
   };
 
@@ -375,7 +399,14 @@ export default function App() {
 
   const confirmResolve = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!processingIssueId) return;
+    if (!processingIssueId || !user) return;
+
+    // Department-specific resolution: Only allow if professor's department matches issue's department
+    const issue = issues.find(i => i.id === processingIssueId);
+    if (user.role === 'professor' && issue && user.department !== issue.department) {
+      alert(`You cannot resolve issues from other departments. This issue belongs to ${issue.department}.`);
+      return;
+    }
 
     try {
       const updates: Partial<Issue> = resolveProofImage
@@ -393,12 +424,22 @@ export default function App() {
       setIsResolveModalOpen(false);
       setProcessingIssueId(null);
       setResolveProofImage(null);
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      alert("Failed to resolve issue. Please try again.");
+    }
   };
 
   const confirmReject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!processingIssueId) return;
+    if (!processingIssueId || !user) return;
+
+    // Department-specific resolution: Only allow if professor's department matches issue's department
+    const issue = issues.find(i => i.id === processingIssueId);
+    if (user.role === 'professor' && issue && user.department !== issue.department) {
+      alert(`You cannot reject issues from other departments. This issue belongs to ${issue.department}.`);
+      return;
+    }
 
     try {
       await db.updateIssue(processingIssueId, {
@@ -413,7 +454,10 @@ export default function App() {
       ));
       setIsRejectModalOpen(false);
       setProcessingIssueId(null);
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      alert("Failed to reject issue. Please try again.");
+    }
   };
 
   // Convert File to Base64 for database storage
@@ -447,13 +491,25 @@ export default function App() {
     
     if (activeTab === 'feed') {
       filtered = filtered.filter(i => i.status === 'open');
+      // Professors should only see their department's open issues in feed
+      if (user?.role === 'professor' && user.department) {
+        filtered = filtered.filter(i => i.department === user.department);
+      }
     } else if (activeTab === 'log') {
       filtered = filtered.filter(i => i.status !== 'open');
+      // Professors should only see their department's resolved/rejected issues
+      if (user?.role === 'professor' && user.department) {
+        filtered = filtered.filter(i => i.department === user.department);
+      }
     } else if (activeTab === 'track') {
       if (user) filtered = filtered.filter(i => i.createdBy === user.id);
     } else if (activeTab === 'professor') {
       filtered = filtered.filter(i => i.status === 'open');
-      // The backend filters by department, but we do search filtering here
+      // Professors should only see their department's open issues
+      if (user?.role === 'professor' && user.department) {
+        filtered = filtered.filter(i => i.department === user.department);
+      }
+      // Search filtering within their department
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         filtered = filtered.filter(i => 
@@ -555,6 +611,7 @@ export default function App() {
                       onReject={initiateReject}
                       viewMode={viewMode}
                       index={idx}
+                      userDepartment={user?.department}
                     />
                   ))}
                 </div>
